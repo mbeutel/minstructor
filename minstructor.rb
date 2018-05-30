@@ -114,6 +114,17 @@ def DEBUG(msg)
 	puts "#{msg}" if $options.debug
 end
 
+
+# try_int is useful for printing integral floating point numbers as integers
+# (i.e. without decimal point)
+class Float
+	def try_int(epsilon = 0.0)
+		self == 0.0 \
+			? 0
+			: ((to_i - self) / self).abs <= epsilon ? to_i : self
+	end
+end
+
 ###################
 # RANGE FUNCTIONS #
 ###################
@@ -140,13 +151,15 @@ def linspace(s, e, num=50, precision=12)
 		raise RangeError, "number of logspace values equals to zero"
 	end
 
+	epsilon = 10**-precision
+
 	return [s] * num if s == e
 
 	res = [s]
 	step = (e - s) / (num - 1.0)
 	acc = s + step
 	(0...num-1).each do
-		res.push(acc.round(precision))
+		res.push(acc.round(precision).try_int(epsilon))
 		acc += step
 	end
 
@@ -156,8 +169,9 @@ end
 # start, end, number of values, base, floating point precision
 # numpy like logspace
 def logspace(s, e, num=50, base=10.0, precision=6)
+	epsilon = 10**-precision
 	exponents = linspace(s, e, num)
-	exponents.map { |exp| (base**exp).round(precision) }
+	exponents.map { |exp| (base**exp).round(precision).try_int(epsilon) }
 end
 
 ##############################
