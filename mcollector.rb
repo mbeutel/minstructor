@@ -20,6 +20,7 @@ class OptPrs
 		options.opath = ""
 		options.debug = false
 		options.sort = false
+		options.skip = Set.new
 
 		opt_parser = OptionParser.new do |opts|
 			opts.banner = "Usage: mcollector.rb [OPTIONS] FILE0 FILE1 ..."
@@ -58,6 +59,11 @@ class OptPrs
 
 			opts.on("-s", "--sort", "Sort CSV output") do |sortFlag|
 				options.sort = sortFlag
+			end
+
+			opts.on("--skip WORD0,WORD1,...",
+                                "skip result files which contain the given keywords", Array) do |skipKeywords|
+				options.skip = skipKeywords
 			end
 
 			opts.separator ""
@@ -208,6 +214,23 @@ class DataFileIterator
 			yield content, fpth
 		end
 	end
+
+	# same as above but skips files which match any of the skip keywords
+	def each_valid_content_with_pth
+		each_content_with_pth do |c, fpth|
+			take = true
+			$options.skip.each do |kw|
+				if c.match(kw)
+					take = false
+					break
+				end
+			end	
+			if take
+				yield c, fpth
+			end
+		end
+	end
+
 end # DataFileIterator
 
 # Takes a DataFileIterator to iterate over the contents of the
@@ -248,7 +271,7 @@ def gather(df_it, options = {})
 	# User gave keywords on the command line
 	if !options[:keywords].empty?
 		DEBUG("  - User gave keywords = #{options[:keywords]}")
-		df_it.each_content_with_pth do |c, pth|
+		df_it.each_valid_content_with_pth do |c, pth|
 			row = {}
 			options[:keywords].each do |key|
 				DEBUG("    - now searching for key: #{key}")
@@ -264,7 +287,7 @@ def gather(df_it, options = {})
 
 	# User gave no keywords on the command line
 	else
-		df_it.each_content_with_pth do |c, pth|
+		df_it.each_valid_content_with_pth do |c, pth|
 			md = c.match(getKeyValueReg) # function call (see above)
 			row = {}
 			# Now we search iteratively for matching key value expressions.
