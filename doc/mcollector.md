@@ -12,7 +12,7 @@ mcollector - measurement collector
 
 # SYNOPSIS
 
-**mcollector** [**-k** *keyword*[,...]] [**-i** *keyword*[,...]] [**-o** *csvfile*] [**-f**] [**-s**|**--sort**] [**--skip** *keyword*[,...]] [**-h**|**--help**] [**-v**|**--verbose**] *file0* *file1* ...
+**mcollector** [**-k** *keyword*[,...]] [**-i** *keyword*[,...]] [**-o** *csvfile*] [**-f**] [**-s**|**--sort**] [**-p** *keyword*[,...]] [**-h**|**--help**] [**-v**|**--verbose**] *file0* *file1* ...
 
 
 # DESCRIPTION
@@ -57,7 +57,7 @@ the **minstructor**(1) to achieve that efficiently.
     print the CSV data to stdout. This flag might result in asking
     for confirmation in case of overwriting a file.
 
-\--skip *keyword0*,*keyword1*, ...
+-p, \--skip *keyword0*,*keyword1*, ...
 :   A file is not processed if any of the keywords in the comma-separated list matches
     the file contents.
 

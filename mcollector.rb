@@ -61,7 +61,7 @@ class OptPrs
 				options.sort = sortFlag
 			end
 
-			opts.on("--skip WORD0,WORD1,...",
+			opts.on("-p", "--skip WORD0,WORD1,...",
                                 "skip result files which contain the given keywords", Array) do |skipKeywords|
 				options.skip = skipKeywords
 			end
@@ -218,14 +218,7 @@ class DataFileIterator
 	# same as above but skips files which match any of the skip keywords
 	def each_valid_content_with_pth
 		each_content_with_pth do |c, fpth|
-			take = true
-			$options.skip.each do |kw|
-				if c.match(kw)
-					take = false
-					break
-				end
-			end	
-			if take
+			if not $options.skip.any? { |kw| c.match(kw) }
 				yield c, fpth
 			end
 		end
