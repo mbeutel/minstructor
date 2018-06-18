@@ -453,7 +453,7 @@ def composeCSV(csvRowHashes, allkeywords, options = {})
 
 	# add the header and ensure that the keywords have no
 	# preceeding and trailing whitespace characters
-	csvStr = "#{allkeywords.map { |k| k.strip }.to_a.join(',')}\n"
+	csvStr = "#{allkeywords.map { |k| k.strip }.to_a.join(expandedSep)}\n"
 
 	DEBUG("  - CSV ROWS = #{csvRows}")
 	csvRows.each_with_index do |row, i|
