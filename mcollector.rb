@@ -21,6 +21,9 @@ class OptPrs
 		options.debug = false
 		options.sort = false
 		options.skip = Set.new
+		options.separator = ','
+		options.raw = false
+		options.nopath = false
 
 		opt_parser = OptionParser.new do |opts|
 			opts.banner = "Usage: mcollector.rb [OPTIONS] FILE0 FILE1 ..."
@@ -35,7 +38,7 @@ class OptPrs
 			end
 
 			opts.on("-i", "--ignore-keywords WORD0,WORD1,... ",
-			        "Ignore this keywords", Array) do |nokeywords|
+			        "Ignore these keywords", Array) do |nokeywords|
 				options.nokeywords = Set.new(nokeywords)
 			end
 
@@ -61,9 +64,27 @@ class OptPrs
 				options.sort = sortFlag
 			end
 
-			opts.on("-p", "--skip WORD0,WORD1,...",
-                                "skip result files which contain the given keywords", Array) do |skipKeywords|
+			opts.on("--skip WORD0,WORD1,...",
+                                "skip result files which contain the given",
+				"keywords", Array) do |skipKeywords|
 				options.skip = skipKeywords
+			end
+
+			opts.on("--separator SEP",
+                                "Use given separator for CSV file (default is",
+				"','; pass '\t' to specify a tab character)") do |sep|
+				options.separator = sep
+			end
+
+			opts.on("-r", "--raw",
+                                "Collect file contents as-is with no keyword",
+				"parsing and with data path appended") do |rawFlag|
+				options.raw = rawFlag
+			end
+
+			opts.on("--no-path",
+                                "Do not append data file path as last column") do |nopathFlag|
+				options.nopath = !nopathFlag
 			end
 
 			opts.separator ""
@@ -90,6 +111,11 @@ class OptPrs
 		opt_parser.set_summary_indent("  ")
 		opt_parser.set_summary_width(25)
 		opt_parser.parse!(args)
+
+		if options.raw and (not options.keywords.empty? or not options.nokeywords.empty?)
+			raise RuntimeError.new("Cannot specify keywords in raw mode")
+		end
+
 		options
 	end  # parse()
 end  # class OptPrs
@@ -181,8 +207,10 @@ class DataFileIterator
 	def initialize(options = {})
 		options = {
 			:dfiles => [],
+			:skip => Set.new,
 		}.merge(options)
 		@dfiles = options[:dfiles]
+		@skip = options[:skip]
 	end
 
 	# this function can be used to iterate with a block structure over all
@@ -218,7 +246,7 @@ class DataFileIterator
 	# same as above but skips files which match any of the skip keywords
 	def each_valid_content_with_pth
 		each_content_with_pth do |c, fpth|
-			if not $options.skip.any? { |kw| c.match(kw) }
+			if not @skip.any? { |kw| c.match(kw) }
 				yield c, fpth
 			end
 		end
@@ -226,12 +254,65 @@ class DataFileIterator
 
 end # DataFileIterator
 
+# substitute supported escape characters in the specified separator
+def expandSeparator(sep)
+	expandedSep = sep
+	if sep == '\t'
+		expandedSep = "\t"
+	end
+	return expandedSep
+end
+
+# Takes a DataFileIterator to iterate over the contents of the
+# files and concatenates their contents.
+# Options:
+#          - separator: which column separator to use
+#          - nopath: do not append column for data file path
+# Returns: FILE_CONTENT
+def gatherAndComposeRaw(df_it, options = {})
+	DEBUG("[+] gatherAndComposeRaw()")
+
+	options = {
+		:separator => ',',
+		:nopath => false,
+	}.merge(options)
+
+	# get the separator, substitute supported escape characters
+	expandedSep = expandSeparator(options[:separator])
+
+	nopath = options[:nopath]
+
+	str = ''
+	filesProcessed = 0
+	df_it.each_valid_content_with_pth do |c, pth|
+		# append file content without trailing newline
+		str << c.chomp
+
+		# optionally append the data file path
+		if not nopath
+			str << expandedSep
+			str << pth
+		end
+
+		# append newline
+		str << "\n"
+		filesProcessed += 1
+	end
+
+	VERBOSE("  - I processed #{filesProcessed} data files")
+	DEBUG("[-] gatherAndComposeRaw()")
+
+	str
+end
+
+
 # Takes a DataFileIterator to iterate over the contents of the
 # files and searches for the values assigned to the keywords.
 # Options: - keywords = [WORD0, WORD1, ...] search for given keywords only
 #          - nokeywords = [WORD0, WORD1, ...] ignore these keywords
+#          - nopath: do not append column for data file path
 # Returns: ALLKEYWORDS, [{ KEYWORD0 => A, KEYWORD1 => Z, ... }, ...]
-# I choose that result format, because not every file contains
+# I chose that result format because not every file contains
 # every keyword. When actually writing the CSV file, the data format
 # is beneficial in the sense of memory access.
 def gather(df_it, options = {})
@@ -240,10 +321,14 @@ def gather(df_it, options = {})
 	options = {
 		:keywords => [],
 		:nokeywords => [],
+		:nopath => false,
 	}.merge(options)
 
 	DEBUG("  - keywords = #{options[:keywords]}")
 	DEBUG("  - nokeywords = #{options[:nokeywords].to_a}")
+	DEBUG("  - nopath = #{options[:nopath]}")
+
+	nopath = options[:nopath]
 
 	# nokeywords take precedence over keywords
 	options[:keywords] -= options[:nokeywords].to_a
@@ -273,7 +358,9 @@ def gather(df_it, options = {})
 				row[key] = val unless val == nil
 			end
 			# per default each row ends with the data file path
-			row["data-file-path"] = pth
+			if not nopath
+				row["data-file-path"] = pth
+			end
 			res.push(row)
 			filesProcessed += 1
 		end
@@ -296,13 +383,17 @@ def gather(df_it, options = {})
 				md = c.match(getKeyValueReg) # function call (see above)
 			end
 			# per default each row ends with the data file path
-			row["data-file-path"] = pth
+			if not nopath
+				row["data-file-path"] = pth
+			end
 			filesProcessed += 1
 			res.push(row)
 		end
 	end
 
-	allkeywords.add("data-file-path")
+	if not nopath
+		allkeywords.add("data-file-path")
+	end
 
 	VERBOSE("  - I processed #{filesProcessed} data files")
 	return allkeywords, res
@@ -310,16 +401,41 @@ def gather(df_it, options = {})
 end
 
 # either output to stdout or write to file
+#  - opath = path to file (leave empty to write to stdout)
+#  - str = string to write to file
+def output(opath, str)
+	DEBUG("[+] output()")
+
+	if opath.empty?
+		# WRITE TO STDOUT
+		puts str
+	else
+		# WRITE TO FILE
+		f = File.open(opath, mode="w")
+		f.write(str)
+		f.close
+	end
+
+	DEBUG("[-] output()")
+end
+
+# compose CSV file from given results and keywords
 #  - opath = path to CSV file
 #  - csvRowHashes = array of hashes containing the data of each row
 #  - allkeywords = set of all keywords in csvRowHashes
-def outputCSV(opath, csvRowHashes, allkeywords, options = {})
-	DEBUG("[+] outputCSV()")
+# Returns: CSV_FILE_CONTENT
+def composeCSV(csvRowHashes, allkeywords, options = {})
+	DEBUG("[+] composeCSV()")
 	DEBUG("  - csvRowHashes = #{csvRowHashes}")
 
 	options = {
 		:sort => false,
+		:separator => ',',
 	}.merge(options)
+
+	# get the separator, substitute supported escape characters
+	sep = options[:separator]	
+	expandedSep = expandSeparator(sep)
 
 	# first we convert to simple csvRows
 	csvRows = []
@@ -342,22 +458,13 @@ def outputCSV(opath, csvRowHashes, allkeywords, options = {})
 	DEBUG("  - CSV ROWS = #{csvRows}")
 	csvRows.each_with_index do |row, i|
 		DEBUG("  - ROW = #{row}")
-		DEBUG("  - [*row].join(',') = #{[*row].join(',')}")
-		csvStr << [*row].join(',') << "\n"
+		DEBUG("  - [*row].join(\"#{sep}\") = #{[*row].join(expandedSep)}")
+		csvStr << [*row].join(expandedSep) << "\n"
 	end
 
-	# WRITE TO STDOUT
-	if opath.empty?
-		puts csvStr
-		DEBUG("[-] outputCSV()")
-		return
-	end
-
-	# WRITE TO FILE
-	f = File.open(opath, mode="w")
-	f.write(csvStr)
-	f.close
 	DEBUG("[-] outputCSV()")
+
+	csvStr
 end
 
 
@@ -406,21 +513,42 @@ if __FILE__ == $0
 	####################
 
 	# GET THE DATA FILE ITERATOR
-	df_it = DataFileIterator.new(:dfiles => $options.dfiles)
+	df_it = DataFileIterator.new(
+		:dfiles => $options.dfiles,
+		:skip => $options.skip)
 
-	# GREP ALL VALUES FROM FILE CONTENTS
-	DEBUG("  - nokeywords = #{$options.nokeywords}")
-	timestamp = Time.now
-	allkeywords, csvRowHashes = gather(df_it,
-	                              :keywords => $options.keywords,
-	                              :nokeywords => $options.nokeywords)
-	gatherT = Time.now - timestamp
-	VERBOSE("  - processing the files took #{gatherT} seconds")
+	if $options.raw
+		timestamp = Time.now
+		content = gatherAndComposeRaw(df_it,
+			:nopath => $options.nopath,
+			:separator => $options.separator)
+		gatherT = Time.now - timestamp
+		VERBOSE("  - processing the files took #{gatherT} seconds")
+	else
+		# GREP ALL VALUES FROM FILE CONTENTS
+		DEBUG("  - nokeywords = #{$options.nokeywords}")
+		timestamp = Time.now
+		allkeywords, csvRowHashes = gather(df_it,
+			:keywords => $options.keywords,
+			:nokeywords => $options.nokeywords,
+			:nopath => $options.nopath)
+		gatherT = Time.now - timestamp
+		VERBOSE("  - processing the files took #{gatherT} seconds")
 
-	# OUTPUT THE CSV DATA
-	VERBOSE("  - sorting flag = #{$options.sort}")
-	timestamp = Time.now
-	outputCSV($options.opath, csvRowHashes, allkeywords, :sort => $options.sort)
-	csvT = Time.now - timestamp
-	VERBOSE("  - outputting the csv data took #{csvT} seconds")
+		# COMPOSE THE CSV DATA
+		VERBOSE("  - sorting flag = #{$options.sort}")
+		timestamp = Time.now
+		content = composeCSV(csvRowHashes, allkeywords,
+			:sort => $options.sort,
+			:separator => $options.separator)
+		csvT = Time.now - timestamp
+		VERBOSE("  - outputting the csv data took #{csvT} seconds")
+	end
+
+	##################
+	# OUTPUT RESULTS #
+	##################
+	output($options.opath, content)
+
 end
+

@@ -57,9 +57,19 @@ the **minstructor**(1) to achieve that efficiently.
     print the CSV data to stdout. This flag might result in asking
     for confirmation in case of overwriting a file.
 
--p, \--skip *keyword0*,*keyword1*, ...
+\--skip *keyword0*,*keyword1*, ...
 :   A file is not processed if any of the keywords in the comma-separated list matches
     the file contents.
+
+\--separator *sep*
+:   Separator to use when generating tabular output. Defaults to ','. Pass '\t' to specify
+    a tab character.
+
+-r, \--raw
+:   Collects file contents as-is with no keyword parsing and with data path appended.
+
+\--no-path
+:   Does not append the data path as last column.
 
 -f
 :   Do not prompt. This might result in overwriting files.
